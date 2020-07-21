@@ -1,0 +1,526 @@
+---
+title: "Sex Differences in Immune Response to COVID-19"
+author: "Mallory Ellingson" 
+Date: "June 24th, 2020"
+output: html_notebook
+---
+
+# Data import & data cleaning
+
+## Loading necessary libaries
+
+```{r}
+library(corrplot)
+library(dplyr)
+```
+
+## Master Spreadsheet (06/24/20)
+
+```{r}
+#Importing data (06/24/20)
+master <- readxl::read_xlsx("/Users/malloryellingson/Documents/COVID/ORIGINAL_FINAL_MasterFlow_datasheet_200625_PHI_removed.xlsx")
+```
+
+```{r}
+
+# 06/24/20
+
+#Fixing study IDS 
+master$hcw.or.pt <- substr(master$ID, 1, 3)
+master$pt <- 1
+master$pt[master$hcw.or.pt == "HCW"] <- 0
+master$newID[master$pt == 1] <- substr(master$ID[master$pt == 1], 1, 5)
+master$newID[master$pt == 0] <- substr(master$ID[master$pt == 0], 1, 6)
+covid <- master
+
+```
+
+
+### Data Cleaning
+
+```{r}
+
+
+#Recoding gender as binary numeric variable
+covid$sex[covid$gender == "M"] <- 0
+covid$sex[covid$gender == "F"] <- 1
+
+#Creating indicator for ICU status
+covid$icu.stat <- 0
+covid$icu.stat[covid$ICU == 2] <- 1
+
+#Getting age information for all patient
+covid$age[covid$age == "≥ 90"] <- "90"
+covid$age <- as.numeric(as.character(covid$age))
+
+#Categorical BMI
+covid$bmi.cat[covid$BMI < 18.5] <- 1
+covid$bmi.cat[covid$BMI >= 18.5 & covid$BMI <= 24.9] <- 2
+covid$bmi.cat[covid$BMI > 24.9 & covid$BMI <= 29.9] <- 3
+covid$bmi.cat[covid$BMI > 29.9 & covid$BMI <= 35.0] <- 4
+covid$bmi.cat[covid$BMI > 35.0] <- 5
+
+#Creating a time dependent variable for tocilizumab treatment
+covid$DayfromTociiStart <- as.character(covid$DayfromTociiStart)
+covid$DayfromTociiStart[covid$DayfromTociiStart == "NoInfo"] <- 99
+covid$DayfromTociiStart <- as.numeric(covid$DayfromTociiStart)
+
+covid$on.tocii[covid$DayfromTociiStart <= 0] <- 0
+covid$on.tocii[covid$DayfromTociiStart > 0 & covid$DayfromTociiStart <= 14] <- 1
+covid$on.tocii[covid$DayfromTociiStart > 14 & covid$DayfromTociiStart != 99] <- 0
+covid$on.tocii[is.na(covid$DayfromTociiStart)] <- 0
+covid$on.tocii[covid$DayfromTociiStart == 99] <- NA
+
+#Creating a time dependent variable for corticosteroid treatment
+covid$DaysfromCSStart <- as.character(covid$DaysfromCSStart)
+covid$DaysfromCSEnd <- as.character(covid$DaysfromCSEnd)
+
+covid$DaysfromCSStart[covid$DaysfromCSStart == "NoInfo"] <- 99
+covid$DaysfromCSEnd[covid$DaysfromCSEnd == "NoInfo"] <- 99
+
+covid$DaysfromCSEnd <- as.numeric(covid$DaysfromCSEnd)
+covid$DaysfromCSStart <- as.numeric(covid$DaysfromCSStart)
+
+covid$on.cs <- 0
+covid$on.cs[covid$DaysfromCSEnd <= 0 & covid$DaysfromCSStart > 0] <- 1
+covid$on.cs[covid$DaysfromCSEnd == 99] <- NA
+
+#Setting tocii & CS and ICU treatment to 0 for HCW
+covid$on.tocii[covid$pt == 0] <- 0
+covid$on.cs[covid$pt == 0] <- 0
+covid$in.icu[covid$pt == 0] <- 0
+
+```
+
+### Creating subsetted datasets
+
+```{r}
+#Dataset limited just to first observations
+covid.base <- covid[covid$obs == 1,]
+
+#Dataset limited to just baseline observations but patients
+covid.pt.all.base <- covid.base[covid.base$pt == 1,]
+
+#Dataset limited to first obs, non-ICU patients, no tocii and no steroids (HCW & patients)
+covid.nonicu <- covid.sex[covid.sex$icu.stat == 0 & covid.sex$tocii == 0 & covid.sex$cs == 0,]
+
+#Same dataset as above, but just patients
+covid.pt.base <- covid.nonicu[covid.nonicu$pt == 1,]
+
+#Only PT
+covid.pt <- covid[covid$pt == 1,]
+covid.pt <- covid.pt[covid.pt$Exclusion != 1,]
+
+#Patients at each timepoint
+
+covid1 <- covid.pt[covid.pt$TP == 1,]
+covid2 <- covid.pt[covid.pt$TP == 2,]
+covid3 <- covid.pt[covid.pt$TP == 3,]
+covid4 <- covid.pt[covid.pt$TP == 4,]
+covid5 <- covid.pt[covid.pt$TP == 5,]
+covid6 <- covid.pt[covid.pt$TP == 6,]
+
+#Calculating mean and SD of BMI for all groups
+
+covid1.f <- covid1[covid1$sex == 1,]
+#mean(covid1.f$BMI)
+#sd(covid1.f$BMI)
+
+covid1.m <- covid1[covid1$sex == 0,]
+#mean(covid1.m$BMI)
+#sd(covid1.m$BMI)
+
+covid1.f.a <- covid1.f[covid1.f$CohortA == 1,]
+#mean(covid1.f.a$BMI)
+#sd(covid1.f.a$BMI)
+
+covid1.m.a <- covid1.m[covid1.m$CohortA == 1,]
+#mean(covid1.m.a$BMI)
+#sd(covid1.m.a$BMI)
+
+covid1.hcw <- covid[covid$hcw.or.pt == "HCW",]
+covid1.hcw <- covid1.hcw[covid1.hcw$TP == 1,]
+
+covid1.hcw.f <- covid1.hcw[covid1.hcw$sex == 1,]
+
+```
+
+### Export for SAS
+
+```{r}
+#See SAS code for Data Analysis
+write.csv(covid, "/Users/malloryellingson/Documents/COVID/covidforsas.csv")
+```
+
+
+## Patient Trajectory Data - Data Cleaning
+
+(Patient trajectory data is identical to data above, just limited to Cohort A and first time point observations with a column for the patient trajectory. Details on how patient trajectory was calculated can be found in the manuscript)
+
+### Importing trajectory data
+
+```{r}
+cohortA.traj <- readxl::read_xlsx("/Users/malloryellingson/Documents/COVID/200624_Cohort_A_1st_time_point_MKE.xlsx")
+```
+
+### Data cleaning and merging
+
+```{r}
+#Limiting to relevant variables
+covid.traj <- cohortA.traj[, 1:440]
+
+#Making sex numerical; 
+
+covid.traj$sex[covid.traj$gender == "F"] <- 1
+covid.traj$sex[covid.traj$gender == "M"] <- 0
+
+```
+
+
+```{r}
+write.csv(covid.traj, "/Users/malloryellingson/Documents/COVID/trajforsas.csv")
+```
+
+## Exploring the data
+
+```{r}
+#Type I or Type III Interferon Response
+hist(covid.base$IFNa2)
+hist(covid.base$IFNL2orIL28A)
+hist(covid.base$IFNy)
+
+#T-Cell Phenotypes
+hist(covid.pt.all.base$CD4Naivenum)
+hist(covid.pt.all.base$CD4Temnum)
+hist(covid.pt.all.base$CD4Tcmnum)
+hist(covid.pt.all.base$NaiveCD8Tnum)
+hist(covid.pt.all.base$CD8Temranum)
+hist(covid.pt.all.base$CD8Tcmnum)
+hist(covid.pt.all.base$CD8TofCD3)
+hist(covid.pt.all.base$CD4TCRactofCD3)
+hist(covid.pt.all.base$CD8TCRactofCD8)
+hist(covid.pt.all.base$CD8TexofCD3)
+hist(covid.pt.all.base$CD8IFNyofCD3)
+hist(covid.pt.all.base$CD8GzBofCD3)
+
+#Viral Load
+hist(covid.pt.all.base$Nptiter)
+
+#Antibody Response
+hist(covid.pt.all.base$AntiS1IgGA450)
+hist(covid.pt.all.base$AntiS1IgMA450)
+
+#Inflammatory Cytokines
+hist(covid.pt.all.base$FLT3L)
+hist(covid.pt.all.base$CCL2orMCP1)
+hist(covid.pt.all.base$CCL8OrMCP2)
+hist(covid.pt.all.base$CCL5orRANTES)
+hist(covid.pt.all.base$MCSF)
+hist(covid.pt.all.base$CCL3orMIP1a)
+hist(covid.pt.all.base$IL15)
+hist(covid.pt.all.base$TRAIL)
+hist(covid.pt.all.base$CXCL13OrBCA1)
+
+#Eosinophils and IgE
+hist(covid.pt.all.base$Eosnum)
+hist(covid.pt.all.base$IgE)
+
+#Additional ELISA results
+hist(covid.pt.all.base$IL8orCXCL8)
+hist(covid.pt.all.base$IL18)
+hist(covid.pt.all.base$sCD40L)
+
+#Monocytes
+hist(covid.pt.all.base$ncMonoofLive)
+hist(covid.pt.all.base$intMonoofLive)
+hist(covid.pt.all.base$cMonoofLive)
+
+```
+
+### Association between outcome variables (immune response measurements) and covariates of interest
+
+Just patients (too many missing values for HCW)
+
+```{r}
+#Limiting dataset to a set of variables of interest
+covid.corr <- covid.pt.base[,c("newID", "age", "sex", "DaysfromSxOnset", "ethnicity", "bmi.cat", "riskfac", "IFNa2", "IFNL2orIL28A", "CD4Naivenum", "CD4Temnum", "CD4Tcmnum", "NaiveCD8Tnum", "CD8Temofnum", "CD8Tcmnum", "AntiS1IgGA450", "AntiS1IgMA450", "Nptiter", "FLT3L", "CCL2orMCP1", "CCL8OrMCP2", "CCL5orRANTES", "MCSF", "CCL3orMIP1a", "IL15", "TRAIL", "CXCL13OrBCA1", "Eosnum", "IgE")]
+
+#Converting any variables read as 'factors' to numeric
+covid.corr$CCL2orMCP1 <- as.numeric(as.character(covid.corr$CCL2orMCP1))
+covid.corr$CCL5orRANTES <- as.numeric(as.character(covid.corr$CCL5orRANTES))
+covid.corr$IFNL2orIL28A <- as.numeric(as.character(covid.corr$IFNL2orIL28A))
+
+```
+
+
+```{r}
+#Age and different immune response measurements (patients)
+
+#Type I or Type III interferons
+cor.test(covid.corr$IFNa2, covid.corr$age) 
+cor.test(covid.corr$IFNL2orIL28A, covid.corr$age) 
+
+#T Cell Phenotypes
+cor.test(covid.corr$CD4Naivenum, covid.corr$age)
+cor.test(covid.corr$CD4Temnum, covid.corr$age)
+cor.test(covid.corr$CD4Tcmnum, covid.corr$age)
+cor.test(covid.corr$NaiveCD8Tnum, covid.corr$age)
+cor.test(covid.corr$CD8Temofnum, covid.corr$age)
+cor.test(covid.corr$CD8Tcmnum, covid.corr$age)
+
+#Antibodies
+cor.test(covid.corr$AntiS1IgGA450, covid.corr$age)
+cor.test(covid.corr$AntiS1IgMA450, covid.corr$age)
+
+#Viral load
+cor.test(covid.corr$Nptiter, covid.corr$age)
+
+#Inflammatory cytokine response
+cor.test(covid.corr$FLT3L, covid.corr$age)
+cor.test(covid.corr$CCL2orMCP1, covid.corr$age)
+cor.test(covid.corr$CCL8OrMCP2, covid.corr$age)
+cor.test(covid.corr$CCL5orRANTES, covid.corr$age)
+cor.test(covid.corr$MCSF, covid.corr$age)
+cor.test(covid.corr$CCL3orMIP1a, covid.corr$age)
+cor.test(covid.corr$IL15, covid.corr$age)
+cor.test(covid.corr$TRAIL, covid.corr$age)
+cor.test(covid.corr$CXCL13OrBCA1, covid.corr$age)
+
+#Eosinophils and IgE
+cor.test(covid.corr$Eosnum, covid.corr$age)
+cor.test(covid.corr$IgE, covid.corr$age)
+```
+
+```{r}
+#Time since symptom onset and immune response measurements (patients)
+
+#Type I or Type III interferons
+cor.test(covid.corr$IFNa2, covid.corr$DaysfromSxOnset) 
+cor.test(covid.corr$IFNL2orIL28A, covid.corr$DaysfromSxOnset)
+
+#T Cell Phenotypes
+cor.test(covid.corr$CD4Naivenum, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CD4Temnum, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CD4Tcmnum, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$NaiveCD8Tnum, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CD8Temofnum, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CD8Tcmnum, covid.corr$DaysfromSxOnset)
+
+#Antibodies
+cor.test(covid.corr$AntiS1IgGA450, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$AntiS1IgMA450, covid.corr$DaysfromSxOnset)
+
+#Viral load
+cor.test(covid.corr$Nptiter, covid.corr$DaysfromSxOnset)
+
+#Inflammatory cytokine response
+cor.test(covid.corr$FLT3L, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CCL2orMCP1, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CCL8OrMCP2, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CCL5orRANTES, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$MCSF, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CCL3orMIP1a, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$IL15, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$TRAIL, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$CXCL13OrBCA1, covid.corr$DaysfromSxOnset)
+
+#Eosinophils and IgE
+cor.test(covid.corr$Eosnum, covid.corr$DaysfromSxOnset)
+cor.test(covid.corr$IgE, covid.corr$DaysfromSxOnset)
+```
+
+```{r}
+#Ethnicity
+covid.corr$ethnicity <- as.factor(covid.corr$ethnicity)
+
+#Type I or Type III interferons
+res.aov <- aov(IFNa2 ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(IFNL2orIL28A ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+#T Cell Phenotypes
+res.aov <- aov(CD4Naivenum ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD4Temnum ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD4Tcmnum~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(NaiveCD8Tnum ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD8Temofnum ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD8Tcmnum ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+#Antibodies
+res.aov <- aov(AntiS1IgGA450 ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(AntiS1IgMA450 ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+#Viral Load
+res.aov <- aov(Nptiter ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+#Inflammatory Cytokine Resposne
+res.aov <- aov(FLT3L ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL2orMCP1 ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL8OrMCP2 ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL5orRANTES ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(MCSF ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL3orMIP1a ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(IL15 ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(TRAIL ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CXCL13OrBCA1 ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+#Eosinophils and IgE
+res.aov <- aov(Eosnum ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(IgE ~ ethnicity, data = covid.corr)
+summary(res.aov)
+
+```
+
+```{r}
+#BMI
+covid.corr$ethnicity <- as.factor(covid.corr$bmi.cat)
+
+#Type I or Type III interferons
+res.aov <- aov(IFNa2 ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(IFNL2orIL28A ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+#T Cell Phenotypes
+res.aov <- aov(CD4Naivenum ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD4Temnum ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD4Tcmnum~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(NaiveCD8Tnum ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD8Temofnum ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CD8Tcmnum ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+#Antibodies
+res.aov <- aov(AntiS1IgGA450 ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(AntiS1IgMA450 ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+#Viral Load
+res.aov <- aov(Nptiter ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+#Inflammatory Cytokine Resposne
+res.aov <- aov(FLT3L ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL2orMCP1 ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL8OrMCP2 ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL5orRANTES ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(MCSF ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CCL3orMIP1a ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(IL15 ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(TRAIL ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(CXCL13OrBCA1 ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+#Eosinophils and IgE
+res.aov <- aov(Eosnum ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+
+res.aov <- aov(IgE ~ bmi.cat, data = covid.corr)
+summary(res.aov)
+```
+
+```{r}
+#Presence of a COVID risk factor
+
+#Type I or Type III interferon respones
+t.test(covid.corr$IFNa2, covid.corr$riskfac)
+t.test(covid.corr$IFNL2orIL28A, covid.corr$riskfac)
+
+#T Cell Phenotypes
+t.test(covid.corr$CD4Naivenum, covid.corr$riskfac)
+t.test(covid.corr$CD4Temnum, covid.corr$riskfac)
+t.test(covid.corr$CD4Tcmnum, covid.corr$riskfac)
+t.test(covid.corr$NaiveCD8Tnum, covid.corr$riskfac)
+t.test(covid.corr$CD8Temofnum, covid.corr$riskfac)
+t.test(covid.corr$CD8Tcmnum, covid.corr$riskfac)
+
+#Antibodies
+t.test(covid.corr$AntiS1IgGA450, covid.corr$riskfac)
+t.test(covid.corr$AntiS1IgMA450, covid.corr$riskfac)
+
+#Viral load
+t.test(covid.corr$Nptiter, covid.corr$riskfac)
+
+#Inflammatory cytokine response
+t.test(covid.corr$FLT3L, covid.corr$riskfac)
+t.test(covid.corr$CCL2orMCP1, covid.corr$riskfac)
+t.test(covid.corr$CCL8OrMCP2, covid.corr$riskfac)
+t.test(covid.corr$CCL5orRANTES, covid.corr$riskfac)
+t.test(covid.corr$MCSF, covid.corr$riskfac)
+t.test(covid.corr$CCL3orMIP1a, covid.corr$riskfac)
+t.test(covid.corr$IL15, covid.corr$riskfac)
+t.test(covid.corr$TRAIL, covid.corr$riskfac)
+t.test(covid.corr$CXCL13OrBCA1, covid.corr$riskfac)
+
+#Eosinophils and IgE
+t.test(covid.corr$Eosnum, covid.corr$riskfac)
+t.test(covid.corr$IgE, covid.corr$riskfac)
+```
+
+
+
